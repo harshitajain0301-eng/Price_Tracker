@@ -1,0 +1,16 @@
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.csproj.AssemblyReference.cache
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.Properties.Resources.resources
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.csproj.GenerateResource.cache
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.csproj.CoreCompileInputs.cache
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\bin\Debug\PriceDropCatcher.exe.config
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\bin\Debug\PriceDropCatcher.exe
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\bin\Debug\PriceDropCatcher.pdb
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\MainWindow.g.cs
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\App.g.cs
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher_MarkupCompile.cache
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher_MarkupCompile.lref
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\MainWindow.baml
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.g.resources
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.exe
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.pdb
+D:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Debug\PriceDropCatcher.exe.config

@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 280px;
+        padding: 12px;
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+      }
+      label {
+        display: block;
+        margin-bottom: 4px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        margin-bottom: 10px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+      }
+      button {
+        width: 100%;
+        padding: 8px;
+        border: none;
+        border-radius: 6px;
+        background: #0369a1;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      p {
+        margin: 0 0 8px;
+        color: #555;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Web app URL (no trailing slash). “Track Product” opens <code>?q=…&amp;auto=1</code> with your exact Google query.</p>
+    <label for="origin">Origin</label>
+    <input id="origin" type="url" placeholder="http://localhost:5173" />
+    <button id="save">Save</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

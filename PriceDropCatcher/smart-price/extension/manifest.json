@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Smart Price Intelligence",
+  "version": "1.0.0",
+  "description": "Track a Google search in Smart Price Intelligence (US). Opens the web app with the same query or URL shown in the search bar.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Smart Price",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.google.com/*",
+        "https://www.google.com/search*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
