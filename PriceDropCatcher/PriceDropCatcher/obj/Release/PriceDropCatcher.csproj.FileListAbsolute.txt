@@ -1,0 +1,10 @@
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\PriceDropCatcher.csproj.AssemblyReference.cache
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\App.baml
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\MainWindow.g.cs
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\App.g.cs
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\GeneratedInternalTypeHelper.g.cs
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\PriceDropCatcher_MarkupCompile.cache
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\PriceDropCatcher_MarkupCompile.lref
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\MainWindow.baml
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\PriceDropCatcher.exe
+d:\Work_25\PriceDropCatcher\PriceDropCatcher\obj\Release\PriceDropCatcher.pdb

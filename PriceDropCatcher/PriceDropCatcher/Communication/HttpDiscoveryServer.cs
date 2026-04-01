@@ -3,7 +3,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Web.Script.Serialization;
+using Newtonsoft.Json;
 
 namespace PriceDropCatcher.Communication
 {
@@ -108,7 +108,7 @@ namespace PriceDropCatcher.Communication
                         timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
                     };
 
-                    var json = new JavaScriptSerializer().Serialize(payload);
+                    var json = JsonConvert.SerializeObject(payload);
                     var bytes = Encoding.UTF8.GetBytes(json);
 
                     response.ContentType = "application/json";

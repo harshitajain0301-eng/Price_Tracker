@@ -1,17 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.Configuration;
-using System.Data;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows;
 using PriceDropCatcher.Communication;
+using PriceDropCatcher.Data;
+using PriceDropCatcher.Services;
+using PriceDropCatcher.ViewModels;
 
 namespace PriceDropCatcher
 {
-    /// <summary>
-    /// Interaction logic for App.xaml
-    /// </summary>
     public partial class App : Application
     {
         private const int WsPort = 22345;
@@ -24,13 +18,20 @@ namespace PriceDropCatcher
         {
             base.OnStartup(e);
 
+            var db = new SqliteDatabaseService();
+            db.Initialize();
+
+            var serp = new SerpApiService(SerpApiKeyResolver.Resolve());
+            var pages = new ProductPageService();
+            var vm = new MainViewModel(pages, serp, db);
+
             _wsServer = new WebSocketServer(WsPort);
             _discoveryServer = new HttpDiscoveryServer(DiscoveryPort, WsPort, "1.0");
 
             _wsServer.StartAsync();
             _discoveryServer.StartAsync();
 
-            var mainWindow = new MainWindow(_wsServer);
+            var mainWindow = new MainWindow(vm, _wsServer);
             MainWindow = mainWindow;
             mainWindow.Show();
         }

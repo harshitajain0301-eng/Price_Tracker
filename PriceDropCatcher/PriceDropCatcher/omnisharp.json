@@ -1,0 +1,11 @@
+{
+  "FileOptions": {
+    "ExcludeSearchPatterns": [
+      "**/node_modules/**/*",
+      "**/bin/**/*"
+    ]
+  },
+  "MsBuild": {
+    "LoadProjectsOnDemand": false
+  }
+}

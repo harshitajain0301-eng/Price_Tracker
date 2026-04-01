@@ -1,24 +1,21 @@
-using PriceDropCatcher.Models;
 using System;
 using System.Collections.Generic;
-using System.Net;
-using System.Net.WebSockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Web.Script.Serialization;
+using Fleck;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace PriceDropCatcher.Communication
 {
     public class WebSocketServer : IDisposable
     {
         private readonly int _port;
-        private HttpListener _httpListener;
-        private CancellationTokenSource _cts;
-        private bool _isRunning;
+        private Fleck.WebSocketServer _server;
         private int _connectedClients;
+        private volatile bool _started;
 
-        public event EventHandler<TrackedProduct> ProductTracked;
+        public event EventHandler<ProductUrlReceivedEventArgs> ProductUrlReceived;
         public event EventHandler ClientConnected;
         public event EventHandler ClientDisconnected;
 
@@ -29,229 +26,159 @@ namespace PriceDropCatcher.Communication
 
         public Task StartAsync()
         {
-            if (_isRunning) return Task.CompletedTask;
+            if (_started) return Task.CompletedTask;
 
-            _cts = new CancellationTokenSource();
-            _httpListener = new HttpListener();
-            _httpListener.Prefixes.Add($"http://127.0.0.1:{_port}/");
-            _httpListener.Start();
-            _isRunning = true;
+            _server = new Fleck.WebSocketServer("ws://127.0.0.1:" + _port)
+            {
+                RestartAfterListenError = true
+            };
 
-            _ = Task.Run(ListenLoopAsync, _cts.Token);
+            _server.Start(conn =>
+            {
+                conn.OnOpen = () =>
+                {
+                    if (!IsValidOrigin(GetOrigin(conn)))
+                    {
+                        conn.Close();
+                        return;
+                    }
+                    Interlocked.Increment(ref _connectedClients);
+                    ClientConnected?.Invoke(this, EventArgs.Empty);
+                };
+
+                conn.OnClose = () =>
+                {
+                    Interlocked.Decrement(ref _connectedClients);
+                    ClientDisconnected?.Invoke(this, EventArgs.Empty);
+                };
+
+                conn.OnMessage = msg => HandleMessage(conn, msg);
+            });
+
+            _started = true;
             return Task.CompletedTask;
         }
 
         public Task StopAsync()
         {
-            if (!_isRunning) return Task.CompletedTask;
-
-            _isRunning = false;
-            try { _cts?.Cancel(); } catch { }
-
-            try { _httpListener?.Stop(); } catch { }
-            try { _httpListener?.Close(); } catch { }
-            _httpListener = null;
-
-            try { _cts?.Dispose(); } catch { }
-            _cts = null;
-
+            if (!_started) return Task.CompletedTask;
+            try { _server?.Dispose(); } catch { }
+            _server = null;
+            _started = false;
             return Task.CompletedTask;
         }
 
-        private async Task ListenLoopAsync()
+        private static string GetOrigin(IWebSocketConnection conn)
         {
-            while (_isRunning && _httpListener != null && !_cts.IsCancellationRequested)
+            try
             {
-                HttpListenerContext context = null;
-                try
+                var info = conn.ConnectionInfo;
+                if (info == null) return null;
+                var o = info.Origin;
+                if (!string.IsNullOrEmpty(o)) return o;
+                if (info.Headers != null)
                 {
-                    context = await _httpListener.GetContextAsync();
-                    _ = Task.Run(() => HandleConnectionAsync(context), _cts.Token);
-                }
-                catch (ObjectDisposedException)
-                {
-                    break;
-                }
-                catch (HttpListenerException)
-                {
-                    if (_isRunning) continue;
-                    break;
-                }
-                catch
-                {
-                    // swallow to keep server alive
+                    foreach (var key in new[] { "Origin", "origin" })
+                    {
+                        if (!info.Headers.ContainsKey(key)) continue;
+                        var v = info.Headers[key];
+                        if (!string.IsNullOrEmpty(v)) return v;
+                    }
                 }
             }
+            catch { }
+            return null;
         }
 
-        private bool IsValidOrigin(string origin)
+        private static bool IsValidOrigin(string origin)
         {
             if (string.IsNullOrWhiteSpace(origin)) return false;
             return origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase);
         }
 
-        private async Task HandleConnectionAsync(HttpListenerContext context)
+        private void HandleMessage(IWebSocketConnection conn, string messageJson)
         {
-            WebSocket socket = null;
             try
             {
-                var origin = context.Request.Headers["Origin"];
-                if (!IsValidOrigin(origin))
+                var root = JObject.Parse(messageJson);
+
+                var type = root["type"]?.Value<string>();
+                if (string.Equals(type, "TRACK_PRODUCT", StringComparison.OrdinalIgnoreCase))
                 {
-                    context.Response.StatusCode = 403;
-                    context.Response.Close();
+                    var url = root["payload"]?["productUrl"]?.Value<string>()
+                              ?? root["payload"]?["url"]?.Value<string>();
+                    if (!string.IsNullOrWhiteSpace(url))
+                    {
+                        ProductUrlReceived?.Invoke(this, new ProductUrlReceivedEventArgs(url.Trim()));
+                        SendAck(conn, url.Trim(), "TRACK_PRODUCT");
+                    }
                     return;
                 }
 
-                var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
-                socket = wsContext.WebSocket;
-
-                Interlocked.Increment(ref _connectedClients);
-                ClientConnected?.Invoke(this, EventArgs.Empty);
-
-                await HandleSocketAsync(socket);
-            }
-            catch
-            {
-                // ignore
-            }
-            finally
-            {
-                if (socket != null)
-                {
-                    Interlocked.Decrement(ref _connectedClients);
-                    ClientDisconnected?.Invoke(this, EventArgs.Empty);
-                }
-                try { socket?.Dispose(); } catch { }
-            }
-        }
-
-        private async Task HandleSocketAsync(WebSocket socket)
-        {
-            var buffer = new byte[4096];
-            var messageBuffer = new List<byte>();
-
-            while (socket.State == WebSocketState.Open && !_cts.IsCancellationRequested)
-            {
-                WebSocketReceiveResult result = null;
-                try
-                {
-                    result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
-                }
-                catch
-                {
-                    break;
-                }
-
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    try
-                    {
-                        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client closed", CancellationToken.None);
-                    }
-                    catch { }
-                    break;
-                }
-
-                if (result.MessageType != WebSocketMessageType.Text)
-                {
-                    continue;
-                }
-
-                messageBuffer.AddRange(new ArraySegment<byte>(buffer, 0, result.Count));
-
-                if (!result.EndOfMessage) continue;
-
-                var json = Encoding.UTF8.GetString(messageBuffer.ToArray());
-                messageBuffer.Clear();
-
-                TryHandleMessage(socket, json);
-            }
-        }
-
-        private void TryHandleMessage(WebSocket socket, string messageJson)
-        {
-            try
-            {
-                var serializer = new JavaScriptSerializer();
-                var dict = serializer.DeserializeObject(messageJson) as Dictionary<string, object>;
-                if (dict == null) return;
-
-                // Extension uses `op`; CookieSheriff desktop uses `operation` internally.
-                var op = GetString(dict, "op") ?? GetString(dict, "operation");
+                var op = root["op"]?.Value<string>() ?? root["operation"]?.Value<string>();
                 if (string.Equals(op, "ping", StringComparison.OrdinalIgnoreCase))
                 {
-                    // CookieSheriff-style pong response
                     var pong = new
                     {
                         id = Guid.NewGuid().ToString(),
                         type = "response",
                         op = "pong",
-                        payload = new { requestId = GetString(dict, "id") },
+                        payload = new { requestId = root["id"]?.Value<string>() },
                         ts = DateTime.UtcNow.ToString("o"),
                         v = "1.0"
                     };
-                    _ = SendJsonAsync(socket, serializer.Serialize(pong));
+                    SendJson(conn, JsonConvert.SerializeObject(pong));
                     return;
                 }
-                if (!string.Equals(op, "product.track", StringComparison.OrdinalIgnoreCase)) return;
 
-                var payload = dict.ContainsKey("payload") ? dict["payload"] as Dictionary<string, object> : null;
-                if (payload == null) return;
-
-                var tracked = new TrackedProduct
+                if (string.Equals(op, "product.track", StringComparison.OrdinalIgnoreCase))
                 {
-                    AddedAt = DateTime.Now,
-                    Url = GetString(payload, "url"),
-                    Title = GetString(payload, "title"),
-                    Host = GetString(payload, "host"),
-                    Price = GetString(payload, "price"),
-                    Currency = GetString(payload, "currency")
-                };
-
-                if (string.IsNullOrWhiteSpace(tracked.Url)) return;
-
-                ProductTracked?.Invoke(this, tracked);
-
-                // Optional ack (doesn't break if extension ignores it)
-                var ack = new
-                {
-                    id = Guid.NewGuid().ToString(),
-                    type = "event",
-                    op = "product.track.ack",
-                    payload = new { url = tracked.Url, receivedAt = DateTime.UtcNow.ToString("o") },
-                    ts = DateTime.UtcNow.ToString("o"),
-                    v = "1.0"
-                };
-                _ = SendJsonAsync(socket, serializer.Serialize(ack));
+                    var payload = root["payload"] as JObject;
+                    var url = payload?["url"]?.Value<string>() ?? payload?["productUrl"]?.Value<string>();
+                    if (!string.IsNullOrWhiteSpace(url))
+                    {
+                        ProductUrlReceived?.Invoke(this, new ProductUrlReceivedEventArgs(url.Trim()));
+                        SendLegacyAck(conn, url.Trim());
+                    }
+                    return;
+                }
             }
             catch
             {
-                // ignore malformed messages
+                // malformed
             }
         }
 
-        private async Task SendJsonAsync(WebSocket socket, string json)
+        private static void SendAck(IWebSocketConnection conn, string url, string via)
+        {
+            var ack = new
+            {
+                id = Guid.NewGuid().ToString(),
+                type = "event",
+                op = "product.track.ack",
+                payload = new { url, receivedAt = DateTime.UtcNow.ToString("o"), via },
+                ts = DateTime.UtcNow.ToString("o"),
+                v = "1.0"
+            };
+            SendJson(conn, JsonConvert.SerializeObject(ack));
+        }
+
+        private static void SendLegacyAck(IWebSocketConnection conn, string url)
+        {
+            SendAck(conn, url, "product.track");
+        }
+
+        private static void SendJson(IWebSocketConnection conn, string json)
         {
             try
             {
-                if (socket == null || socket.State != WebSocketState.Open) return;
-                var bytes = Encoding.UTF8.GetBytes(json);
-                await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                if (conn == null) return;
+                conn.Send(json);
             }
-            catch
-            {
-                // ignore
-            }
+            catch { }
         }
 
-        private static string GetString(Dictionary<string, object> dict, string key)
-        {
-            if (dict == null || !dict.ContainsKey(key) || dict[key] == null) return null;
-            return dict[key].ToString();
-        }
-
-        public bool IsRunning => _isRunning;
+        public bool IsRunning => _started;
         public int ConnectedClientsCount => Volatile.Read(ref _connectedClients);
 
         public void Dispose()
@@ -259,5 +186,14 @@ namespace PriceDropCatcher.Communication
             StopAsync().Wait();
         }
     }
-}
 
+    public class ProductUrlReceivedEventArgs : EventArgs
+    {
+        public ProductUrlReceivedEventArgs(string productUrl)
+        {
+            ProductUrl = productUrl;
+        }
+
+        public string ProductUrl { get; }
+    }
+}
