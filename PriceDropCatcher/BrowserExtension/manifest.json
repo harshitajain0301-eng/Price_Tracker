@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "PriceDropCatcher Bridge",
+  "version": "1.0.0",
+  "description": "Sends the current product page URL to the PriceDropCatcher desktop app (WebSocket ws://127.0.0.1:22345).",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://*.amazon.com/*",
+    "https://*.amazon.in/*",
+    "https://*.amazon.co.uk/*",
+    "https://*.amazon.de/*",
+    "https://www.walmart.com/*",
+    "https://www.ebay.com/*",
+    "https://www.ebay.co.uk/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Send this product page to PriceDropCatcher"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.amazon.com/*",
+        "https://*.amazon.in/*",
+        "https://*.amazon.co.uk/*",
+        "https://*.amazon.de/*",
+        "https://www.walmart.com/*",
+        "https://www.ebay.com/*",
+        "https://www.ebay.co.uk/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

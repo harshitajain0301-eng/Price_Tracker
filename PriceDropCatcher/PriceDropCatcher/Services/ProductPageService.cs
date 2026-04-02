@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
+using Newtonsoft.Json.Linq;
 using PriceDropCatcher.Models;
 
 namespace PriceDropCatcher.Services
@@ -68,16 +69,136 @@ namespace PriceDropCatcher.Services
 
         private static string ExtractTitle(HtmlDocument doc, string host)
         {
+            string dom = null;
             if (host.Contains("amazon."))
-                return doc.DocumentNode.SelectSingleNode("//*[@id='productTitle']")?.InnerText;
-            if (host.Contains("walmart."))
-                return doc.DocumentNode.SelectSingleNode("//h1[@data-automation-id]")?.InnerText;
-            if (host.Contains("ebay."))
-                return doc.DocumentNode.SelectSingleNode("//*[@id='itemTitle']")?.InnerText;
+            {
+                dom = doc.DocumentNode.SelectSingleNode("//*[@id='productTitle']")?.InnerText
+                      ?? doc.DocumentNode.SelectSingleNode("//*[@id='productTitle']//span[contains(@class,'a-size-large')]")?.InnerText
+                      ?? doc.DocumentNode.SelectSingleNode("//h1[contains(@class,'a-size-large')]")?.InnerText;
+            }
+            else if (host.Contains("walmart."))
+            {
+                dom = doc.DocumentNode.SelectSingleNode("//h1[@data-automation-id='product-title']")?.InnerText
+                      ?? doc.DocumentNode.SelectSingleNode("//h1[@data-automation-id]")?.InnerText;
+            }
+            else if (host.Contains("ebay."))
+            {
+                dom = doc.DocumentNode.SelectSingleNode("//*[@id='itemTitle']")?.InnerText
+                      ?? doc.DocumentNode.SelectSingleNode("//*[@class='x-item-title__mainTitle']")?.InnerText;
+            }
+            else
+            {
+                dom = doc.DocumentNode.SelectSingleNode("//*[@id='productTitle']")?.InnerText
+                      ?? doc.DocumentNode.SelectSingleNode("//h1[@data-automation-id='product-title']")?.InnerText
+                      ?? doc.DocumentNode.SelectSingleNode("//h1[@data-automation-id]")?.InnerText
+                      ?? doc.DocumentNode.SelectSingleNode("//*[@id='itemTitle']")?.InnerText;
+            }
 
-            return doc.DocumentNode.SelectSingleNode("//*[@id='productTitle']")?.InnerText
-                   ?? doc.DocumentNode.SelectSingleNode("//h1[@data-automation-id]")?.InnerText
-                   ?? doc.DocumentNode.SelectSingleNode("//*[@id='itemTitle']")?.InnerText;
+            if (!string.IsNullOrWhiteSpace(dom))
+                return dom;
+
+            var meta = ExtractTitleFromMeta(doc);
+            if (!string.IsNullOrWhiteSpace(meta))
+                return meta;
+
+            var jsonLd = ExtractProductNameFromJsonLd(doc);
+            if (!string.IsNullOrWhiteSpace(jsonLd))
+                return jsonLd;
+
+            return SanitizeHtmlTitle(doc.DocumentNode.SelectSingleNode("//title")?.InnerText);
+        }
+
+        private static string ExtractTitleFromMeta(HtmlDocument doc)
+        {
+            var og = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null);
+            if (!string.IsNullOrWhiteSpace(og)) return og;
+            var tw = doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:title']")?.GetAttributeValue("content", null);
+            if (!string.IsNullOrWhiteSpace(tw)) return tw;
+            return doc.DocumentNode.SelectSingleNode("//meta[@name='title']")?.GetAttributeValue("content", null);
+        }
+
+        private static string ExtractProductNameFromJsonLd(HtmlDocument doc)
+        {
+            var scripts = doc.DocumentNode.SelectNodes("//script[@type='application/ld+json']");
+            if (scripts == null) return null;
+            foreach (var script in scripts)
+            {
+                var raw = script.InnerText;
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                try
+                {
+                    var token = JToken.Parse(raw);
+                    var name = TryReadProductNameFromJsonLd(token);
+                    if (!string.IsNullOrWhiteSpace(name)) return name;
+                }
+                catch
+                {
+                    // skip malformed JSON
+                }
+            }
+            return null;
+        }
+
+        private static string TryReadProductNameFromJsonLd(JToken token)
+        {
+            if (token == null) return null;
+            if (token.Type == JTokenType.Array)
+            {
+                foreach (var item in token)
+                {
+                    var n = TryReadProductNameFromJsonLd(item);
+                    if (!string.IsNullOrWhiteSpace(n)) return n;
+                }
+                return null;
+            }
+
+            if (token.Type != JTokenType.Object) return null;
+            var o = (JObject)token;
+
+            if (o["@graph"] is JArray graph)
+            {
+                foreach (var item in graph)
+                {
+                    var n = TryReadProductNameFromJsonLd(item);
+                    if (!string.IsNullOrWhiteSpace(n)) return n;
+                }
+            }
+
+            if (IsJsonLdProductType(o["@type"]))
+            {
+                var name = o["name"]?.Value<string>();
+                if (!string.IsNullOrWhiteSpace(name)) return name;
+            }
+
+            return null;
+        }
+
+        private static bool IsJsonLdProductType(JToken typeTok)
+        {
+            if (typeTok == null || typeTok.Type == JTokenType.Null) return false;
+            if (typeTok.Type == JTokenType.String)
+                return typeTok.Value<string>().IndexOf("Product", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (typeTok.Type == JTokenType.Array)
+            {
+                foreach (var x in typeTok)
+                {
+                    var s = x?.Value<string>();
+                    if (!string.IsNullOrEmpty(s) && s.IndexOf("Product", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private static string SanitizeHtmlTitle(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title)) return null;
+            var t = WebUtilityTrim(title);
+            t = Regex.Replace(t, @"\s*[\|\-:]\s*Amazon[^\|]*$", "", RegexOptions.IgnoreCase);
+            t = Regex.Replace(t, @"\s*[\|\-:]\s*eBay[^\|]*$", "", RegexOptions.IgnoreCase);
+            t = Regex.Replace(t, @"\s*[\|\-:]\s*Walmart[^\|]*$", "", RegexOptions.IgnoreCase);
+            t = Regex.Replace(t, @"\s*[\|\-:]\s*Flipkart[^\|]*$", "", RegexOptions.IgnoreCase);
+            return string.IsNullOrWhiteSpace(t) ? null : t.Trim();
         }
 
         private static string ExtractImage(HtmlDocument doc, string host)

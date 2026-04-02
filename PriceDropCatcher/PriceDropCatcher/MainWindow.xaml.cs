@@ -17,7 +17,7 @@ namespace PriceDropCatcher
 
             webSocketServer.ProductUrlReceived += (_, args) =>
             {
-                Dispatcher.Invoke(() => viewModel.OnProductUrlFromExtension(args.ProductUrl));
+                Dispatcher.Invoke(() => viewModel.OnProductUrlFromExtension(args.ProductUrl, args.SuggestedProductName));
             };
             webSocketServer.ClientConnected += (_, __) =>
             {

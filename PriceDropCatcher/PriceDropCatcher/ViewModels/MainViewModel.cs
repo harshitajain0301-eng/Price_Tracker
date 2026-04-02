@@ -307,16 +307,16 @@ namespace PriceDropCatcher.ViewModels
             });
         }
 
-        public void OnProductUrlFromExtension(string url)
+        public void OnProductUrlFromExtension(string url, string suggestedProductName = null)
         {
             _lastProcessedUrl = url;
-            _ = ProcessProductUrlAsync(url, CancellationToken.None);
+            _ = ProcessProductUrlAsync(url, CancellationToken.None, suggestedProductName);
         }
 
         private async Task RetryLastAsync()
         {
             if (string.IsNullOrWhiteSpace(_lastProcessedUrl)) return;
-            await ProcessProductUrlAsync(_lastProcessedUrl, CancellationToken.None).ConfigureAwait(false);
+            await ProcessProductUrlAsync(_lastProcessedUrl, CancellationToken.None, null).ConfigureAwait(false);
         }
 
         private async Task RunSearchFromQueryAsync()
@@ -328,7 +328,15 @@ namespace PriceDropCatcher.ViewModels
             await FetchPricesForQueryAsync(SearchQuery.Trim(), null, ct).ConfigureAwait(false);
         }
 
-        public async Task ProcessProductUrlAsync(string productUrl, CancellationToken ct)
+        private static void ApplySuggestedNameIfNeeded(Product product, string suggestedProductName)
+        {
+            if (product == null || string.IsNullOrWhiteSpace(suggestedProductName)) return;
+            var n = (product.Name ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(n) || n.Equals("Product", StringComparison.OrdinalIgnoreCase) || n.Length < 3)
+                product.Name = suggestedProductName.Trim();
+        }
+
+        public async Task ProcessProductUrlAsync(string productUrl, CancellationToken ct, string suggestedProductName = null)
         {
             _pipelineCts?.Cancel();
             _pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -349,6 +357,7 @@ namespace PriceDropCatcher.ViewModels
             try
             {
                 var product = await _pageService.LoadProductAsync(productUrl, ct).ConfigureAwait(false);
+                ApplySuggestedNameIfNeeded(product, suggestedProductName);
                 RunOnUi(() =>
                 {
                     CurrentProduct = product;

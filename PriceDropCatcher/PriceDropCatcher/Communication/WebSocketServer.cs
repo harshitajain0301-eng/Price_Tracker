@@ -93,7 +93,17 @@ namespace PriceDropCatcher.Communication
         private static bool IsValidOrigin(string origin)
         {
             if (string.IsNullOrWhiteSpace(origin)) return false;
-            return origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase);
+            if (origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase))
+                return true;
+            // Content scripts that open WebSocket use the page origin (not chrome-extension://).
+            var o = origin.ToLowerInvariant();
+            if (o.StartsWith("https://www.amazon.") || o.StartsWith("https://amazon."))
+                return true;
+            if (o.StartsWith("https://www.walmart.com"))
+                return true;
+            if (o.StartsWith("https://www.ebay.") || o.StartsWith("https://ebay.com"))
+                return true;
+            return false;
         }
 
         private void HandleMessage(IWebSocketConnection conn, string messageJson)
@@ -105,11 +115,15 @@ namespace PriceDropCatcher.Communication
                 var type = root["type"]?.Value<string>();
                 if (string.Equals(type, "TRACK_PRODUCT", StringComparison.OrdinalIgnoreCase))
                 {
-                    var url = root["payload"]?["productUrl"]?.Value<string>()
-                              ?? root["payload"]?["url"]?.Value<string>();
+                    var payload = root["payload"] as JObject;
+                    var url = payload?["productUrl"]?.Value<string>() ?? payload?["url"]?.Value<string>();
                     if (!string.IsNullOrWhiteSpace(url))
                     {
-                        ProductUrlReceived?.Invoke(this, new ProductUrlReceivedEventArgs(url.Trim()));
+                        var suggested = FirstNonEmpty(
+                            payload?["productName"]?.Value<string>(),
+                            payload?["title"]?.Value<string>(),
+                            payload?["name"]?.Value<string>());
+                        ProductUrlReceived?.Invoke(this, new ProductUrlReceivedEventArgs(url.Trim(), suggested));
                         SendAck(conn, url.Trim(), "TRACK_PRODUCT");
                     }
                     return;
@@ -137,7 +151,11 @@ namespace PriceDropCatcher.Communication
                     var url = payload?["url"]?.Value<string>() ?? payload?["productUrl"]?.Value<string>();
                     if (!string.IsNullOrWhiteSpace(url))
                     {
-                        ProductUrlReceived?.Invoke(this, new ProductUrlReceivedEventArgs(url.Trim()));
+                        var suggested = FirstNonEmpty(
+                            payload?["productName"]?.Value<string>(),
+                            payload?["title"]?.Value<string>(),
+                            payload?["name"]?.Value<string>());
+                        ProductUrlReceived?.Invoke(this, new ProductUrlReceivedEventArgs(url.Trim(), suggested));
                         SendLegacyAck(conn, url.Trim());
                     }
                     return;
@@ -185,15 +203,28 @@ namespace PriceDropCatcher.Communication
         {
             StopAsync().Wait();
         }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            if (values == null) return null;
+            foreach (var v in values)
+            {
+                if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+            }
+            return null;
+        }
     }
 
     public class ProductUrlReceivedEventArgs : EventArgs
     {
-        public ProductUrlReceivedEventArgs(string productUrl)
+        public ProductUrlReceivedEventArgs(string productUrl, string suggestedProductName = null)
         {
             ProductUrl = productUrl;
+            SuggestedProductName = suggestedProductName;
         }
 
         public string ProductUrl { get; }
+        /// <summary>Optional name from the extension (DOM). Used if page scrape returns nothing useful.</summary>
+        public string SuggestedProductName { get; }
     }
 }

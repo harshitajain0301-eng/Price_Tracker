@@ -1,0 +1,7 @@
+<Project>
+  <!-- Must be in Directory.Build.props (before SDK imports) so obj\ is not under the repo folder.
+       Reduces "Unable to delete ... PriceDropCatcher.exe" when Microsoft Defender locks files in .\obj. -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\PriceDropCatcherBuild\obj\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>
